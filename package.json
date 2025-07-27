@@ -1,0 +1,19 @@
+{
+  "name": "customairtableintegration",
+  "version": "1.0.0",
+  "description": "A serverless middleware function to extract, transform, and load data form Fillout submission to Airtable",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "github.com/mquigs00/CustomAirtableIntegration"
+  },
+  "author": "Matt Quigley",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.11.0",
+    "date-fns": "^4.1.0"
+  }
+}
