@@ -18,6 +18,31 @@ async function getSecret(secretName) {
     return buff.toString('utf-8');
 }
 
+async function getCounty(streetAddress, city, state, zipcode) {
+    try {
+        const openCageSecret = await getSecret("OpenCageKey");
+        const openCageKey = JSON.parse(openCageSecret).OPENCAGE_KEY;
+        const addressQuery = `${streetAddress}, ${city}, ${state}, ${zipcode}`;
+        console.log('Opencage key: ' + openCageKey.substring(0,4));
+
+        const response = await axios.get(
+            'https://api.opencagedata.com/geocode/v1/json',
+            {
+                params: {
+                    key: openCageKey,
+                    q: addressQuery,
+                    limit: 1
+                }
+            }
+        );
+        const body = response.data;
+        let county = body.results[0].components.county;
+        return county;
+    } catch (error) {
+        console.error("Error finding county: ", error);
+    }
+};
+
 async function clientExists(firstName, lastName, dateOfBirth, ssn) {
     try {
         const airtableTokenName = "AirtableMiddlewareTest";
@@ -164,7 +189,7 @@ export const handler = async (event) => {
     const city = address.city;
     const state = address.state;
     const zipcode = address.zipCode;
-    const county = "test";
+    const county = await getCounty(streetAddress, city, state, zipcode);
 
     switch(gender) {
         case "M":
