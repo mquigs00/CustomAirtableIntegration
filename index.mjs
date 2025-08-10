@@ -2,8 +2,33 @@ import {format, parseISO} from 'date-fns';
 import axios from 'axios';
 import {SecretsManagerClient, GetSecretValueCommand} from "@aws-sdk/client-secrets-manager";
 
+/*
+Example JSON received:
+{
+    "formId": "nVNBoEosh2us",
+    "formName": "Middleware Test Form",
+    "submission": {
+        "submissionId": "0adb7f88-ea15-49ab-98e0-cf07a6fb2558",
+        "submissionTime": "2025-07-16T14:14:01.335Z",
+        "lastUpdatedAt": "2025-07-16T14:14:01.335Z",
+        "questions": [
+            {
+                "id": "qC1W",
+                "name": "First Name",
+                "type": "ShortAnswer",
+                "value": "Matt"
+            },
+            ...
+*/
+
 const client = new SecretsManagerClient({region: "us-east-1"});
 
+/**
+ * Retrieves a secret value from AWS Secrets Manager
+ * 
+ * @param {String} secretName
+ * @returns the secret value
+ */
 async function getSecret(secretName) {
     const command = new GetSecretValueCommand({
         SecretId: secretName
@@ -18,12 +43,23 @@ async function getSecret(secretName) {
     return buff.toString('utf-8');
 }
 
+/**
+ * Given the streetAddress, city, state, and zipcode, this function calls the OpenCage forward geocoding API to get the county
+ * name
+ * 
+ * @param {String} streetAddress 
+ * @param {String} city 
+ * @param {String} state 
+ * @param {String} zipcode 
+ * @returns county
+ */
 async function getCounty(streetAddress, city, state, zipcode) {
     try {
+        // retrieve the OpenCage API key
         const openCageSecret = await getSecret("OpenCageKey");
         const openCageKey = JSON.parse(openCageSecret).OPENCAGE_KEY;
-        const addressQuery = `${streetAddress}, ${city}, ${state}, ${zipcode}`;
-        console.log('Opencage key: ' + openCageKey.substring(0,4));
+
+        const addressQuery = `${streetAddress}, ${city}, ${state}, ${zipcode}`; // combine the given address components
 
         const response = await axios.get(
             'https://api.opencagedata.com/geocode/v1/json',
@@ -35,30 +71,43 @@ async function getCounty(streetAddress, city, state, zipcode) {
                 }
             }
         );
+
+        // retrieve the county value from the response body
         const body = response.data;
         let county = body.results[0].components.county;
+
         return county;
     } catch (error) {
         console.error("Error finding county: ", error);
     }
 };
 
-async function clientExists(firstName, lastName, dateOfBirth, ssn) {
+/**
+ * Checks if there is already a Client record in the Airtable base with the same first name, last name, last four digits of SSN,
+ * and date of birth
+ * 
+ * @param {String} firstName 
+ * @param {String} lastName 
+ * @param {String} dateOfBirth 
+ * @param {String} lastFourOfSSN 
+ * @returns true if the client already exists, false if not
+ */
+async function clientExists(firstName, lastName, dateOfBirth, lastFourOfSSN) {
     try {
-        const airtableTokenName = "AirtableMiddlewareTest";
-        const airtableToken = await getSecret(airtableTokenName);
+        // retrieve the Airtable access token from AWS Secrets Manager
+        const airtableSecret = await getSecret("AirtableToken");
+        const airtableToken = JSON.parse(airtableSecret).AIRTABLE_TOKEN;
 
-        const options = {
-            hostName: 'localhost',
-            port: 2773,
-            path: `/secretsmanager/get?secretId=${secretName}`,
-        }
+        // create our formula to call the Airtable List Records API and filter by formula to only receive records with
+        // the given name, date of birth, and last four of SSN
         let formula = `AND(
-            {First Name}='${first_name}',
-            {Last Name}='${last_name}',
-            {Date of Birth}=DATETIME_PARSE('${dateOfBirth}', 'YYYY-MM-DD'),
-            {SSN}='${ssn}'
+            {First Name}='${firstName}',
+            {Last Name}='${lastName}',
+            {Birth Date}=DATETIME_PARSE('${dateOfBirth}', 'YYYY-MM-DD'),
+            RIGHT({SSN}, 4)='${lastFourOfSSN}'
         )`;
+
+        console.log("Retrieved tokens and created formula. Calling axios.get");
         const response = await axios.get(
             'https://api.airtable.com/v0/appsyRmBPaxsZIhaA/tbl4iFS1HK8fArCYg',
             {
@@ -70,18 +119,33 @@ async function clientExists(firstName, lastName, dateOfBirth, ssn) {
                 }
             }
         );
-    } catch {
+
+        let toReturn = false;
+
+        // if any records were returned, then a client already exists with those attributes
+        if (response.data.records.length > 0) {
+            console.log(response.data.records);
+            toReturn = true;
+        }
+
+        return toReturn;
+    } catch (error) {
         console.error("Error checking if client exists", error);
     }
 }
 
+/**
+ * Inserts a new Client record into Airtable
+ * 
+ * @param {Object} clientData - all of the client's required data for entry into Airtable
+ */
 async function insertClient(clientData) {
     try {
-        console.log("Attempting to Insert Client");
+        // retrieve Airtable access token from AWS Secrets Manager
         const airtableSecret = await getSecret("AirtableToken");
         const airtableToken = JSON.parse(airtableSecret).AIRTABLE_TOKEN;
 
-        console.log(clientData);
+        console.log("Retrieved Airtable access token. Attempting to insert Client");
 
         const response = await axios.post(
             'https://api.airtable.com/v0/appsyRmBPaxsZIhaA/tbl4iFS1HK8fArCYg',
@@ -130,14 +194,31 @@ async function insertClient(clientData) {
                 }
             }
         );
+
+        console.log("Client Inserted")
     } catch (error) {
         console.error("Error inserting client", error);
+
+        // get the detailed error response from Airtable
+        if (error.response) {
+            console.error("Status Code:", error.response.status);
+            console.error("Response Data:", JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error("No response received from Airtable");
+        }
     }
 };
 
+/**
+ * Given a question name ("First Name", "Date of Birth", etc.) the function provides it's value fromt the given question object
+ * @param {Array} questions - the array of question objects from the Fillout webhook body
+ * @param {String} questionName - the question whose answer is to be retrieved
+ * @returns questionObj.value - the client's answer for the given question
+ */
 function getAnswerFromQuestion(questions, questionName) {
-    const questionObj = questions.find(question => question.name === questionName);
+    const questionObj = questions.find(question => question.name === questionName); // find the question in the array
 
+    // if the question is not found, throw an error providing which question could not be found
     if (questionObj === undefined) {
         throw new Error(`Question ${questionName} not found`);
     }
@@ -147,16 +228,27 @@ function getAnswerFromQuestion(questions, questionName) {
 
 export const handler = async (event) => {
     let body = JSON.parse(event.body);
-    let questions = body.submission.questions;
+    let questions = body.submission.questions;                      // get the array of question object from the array
 
     const filloutId = body.submission.submissionId;
 
-    console.log("Body", body);
     const firstName = getAnswerFromQuestion(questions, "First Name");
-    
     const lastName = getAnswerFromQuestion(questions, "Last Name");
     const dateOfBirth = getAnswerFromQuestion(questions, "Date of Birth");
     const lastFourOfSSN = getAnswerFromQuestion(questions, "Last 4 Digits of Social Security Number");
+
+    console.log("Calling client exists");
+
+    // check if the client already exists before proceeding with transforming and loading the data
+    if (await clientExists(firstName, lastName, dateOfBirth, lastFourOfSSN)) {
+        console.log("Client already exists in Airtable");
+        const response = {
+            statusCode: 200,
+            body: JSON.stringify('Client already exists in Airtable'),
+        };
+        return response;
+    }
+
     const paddedSSN = lastFourOfSSN.padStart(9, '0');
     const address = getAnswerFromQuestion(questions, "Address");
     const phoneNumber = getAnswerFromQuestion(questions, "Phone Number");
@@ -203,14 +295,12 @@ export const handler = async (event) => {
             break;
     }
     
-    //clientExists(firstName, lastName, dateOfBirthISO, paddedSSN);
-    
     const clientData = {
         basic: {
             firstName,
             lastName,
             dateOfBirth: dateOfBirthISO,
-            ssn: lastFourOfSSN
+            ssn: paddedSSN
         },
         contact: {
             phoneNumber: trimmedPhoneNumber,
