@@ -7,6 +7,18 @@ Security:
 1. The purpose of this project was to demonstrate a custom integration between Fillout and a CRM. In most CRM's, businesses are collecting PII like first and last name, phone number, email address, living address, date of birth. Also, in order for poeple to demo my Fillout-Salesforce integration I would have to give out my Salesforce account credentials so they can view the generated leads. Therefore, I created this project with non sensitive questions and a public read-only Airtable base so people can test out and verify my pipeline works. I did keep an address field because I want to demonstrate that I managed to dynamically fill the County field and intelligently map it to a pre-defined list of County options because this was a major obstacle I faced when integrating to a real CRM.
 2. I created a Webhook Secret to verify that only Fillout form submissions trigger the Lambda function and the CRM does not get flooded with fake submissions
 
+Duplicate Policy:
+Since I'm not collecting PII in this, I don't have a way to unique identify records like a Social Security number. Therefore, I set an arbitrary duplicate policy where no two records can be sent in with the same First Name, Favorite Ice Cream, and choice of Lebron vs Jordan and Beatles vs Stones. If you try to enter a Fillout submission with the same answers for those four fields, you will see only one record appears in Airtable.
+
+To test my project, submit a form here:
+https://mquigs00.fillout.com/t/uoYcBVXYS3us
+
+View results in Airtable:
+https://airtable.com/appsyRmBPaxsZIhaA/shrmc1AA7KDieOKAW
+
+Notice anything not working properly?
+Please send me an email at mquigs00@gmail.com so I can fix it.
+
 Story:
 This project was inspired by my work re-designing the data system for an organization that was previously using paper intake forms to gather client data with 30+ mandatory fields. Clients would have to fill out the paper form at the beginning of the first appointment, wasting valuable time that they could be getting their case started with the employee. After appointments, the employee would then have to manually enter the clients data to create a new client in the case management system. I set up
 a cost-effective subscription with Fillout.com so clients could efficiently fill out all of their data before coming into the
